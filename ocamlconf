@@ -1,0 +1,102 @@
+#!/usr/bin/env python
+
+import argparse
+import functools
+import os
+import subprocess
+
+def check_output(cmd, separator = None):
+    output = subprocess.check_output(cmd, shell=True)
+    return output.split(separator) if separator != None else output.split()
+
+def dropext(filename):
+    return os.path.splitext(filename)[0]
+
+def list_dependencies(folder, files):
+    def reducer(result, string):
+        if len(string) == 0:
+            return result
+        sanitized = string.replace('\\', '')
+        if string[0].isspace():
+            result[-1] += sanitized
+        else:
+            result.append(sanitized)
+        return result
+
+    def lines2dict(raw):
+        lines = map(lambda r: r.split(), raw)
+        result = {}
+        for line in lines:
+            extless = map(dropext, line)
+            key = extless[0]
+            separator = extless[1]
+            values = extless[2:]
+            assert key != ':'
+            assert separator == ':'
+            result[key] = values
+        return result
+
+    return lines2dict(
+        functools.reduce(
+            reducer,
+            check_output(
+                'ocamldep -I %s -native %s' % (folder, ' '.join(files)),
+                separator='\n'),
+            []))
+
+
+def ocamlconf(args):
+    files = check_output('find %s -name "*.ml"' % args['dir'])
+    print('[ocamlconf] Found %d OCaml sources in %s.' % (len(files), args['dir']))
+    sources = check_output('ocamldep -sort %s' % ' '.join(files))
+    extless = map(dropext, sources)
+    objs = map(lambda x: '%s.cmx' % x, extless)
+    dependencies = list_dependencies(args['dir'], sources)
+    print('[ocamlconf] Built dependency graph: %r.' % dependencies)
+
+    print('[ocamlconf] Writing Makefile.')
+    ocaml = 'ocamlfind ocamlopt'
+    writer = open('Makefile', 'w')
+    writer.write('PACKAGE="%s"\n\n' % args['package'])
+    writer.write('define link\n')
+    writer.write('\t%s -package $PACKAGE -o $@ -linkpkg $^\n' % ocaml)
+    writer.write('endef\n\n')
+    writer.write('define compile\n')
+    writer.write('\t%s -package $PACKAGE -I %s -c $<\n' % (ocaml, args['dir']))
+    writer.write('endef\n\n')
+    writer.write('%s: %s\n' % (args['binary'], ' '.join(objs)))
+    writer.write('\t$(link)\n\n')
+    for key, deps in dependencies.items():
+        depnames = map(lambda dep: '%s.cmx' % dep, deps)
+        writer.write('%s.cmx: %s.ml %s\n' % (key, key, ' '.join(depnames)))
+        writer.write('\t$(compile)\n\n')
+    print('[ocamlconf] Done!')
+
+def check_args(args):
+    assert os.path.isdir(args['dir'])
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Generate a Makefile to build an OCaml codebase!')
+    parser.add_argument(
+        'dir',
+        type=str,
+        help='Path to a directory containing OCaml (*.ml) files')
+    parser.add_argument(
+        '--binary',
+        type=str,
+        dest='binary',
+        required=True,
+        help='Name of main OCaml module')
+    parser.add_argument(
+        '--package',
+        type=str,
+        dest='package',
+        required=True,
+        help='Pass along to ocamlopt to identify external packages to include')
+    args = vars(parser.parse_args())
+    check_args(args)
+    ocamlconf(args)
+
+if __name__ == '__main__':
+    main()
