@@ -70,6 +70,10 @@ def ocamlconf(args):
         depnames = map(lambda dep: '%s.cmx' % dep, deps)
         writer.write('%s.cmx: %s.ml %s\n' % (key, key, ' '.join(depnames)))
         writer.write('\t$(compile)\n\n')
+    writer.write('.PHONY: clean\n')
+    writer.write('clean:\n')
+    writer.write('\trm -f %s\n' % args['binary'])
+    writer.write('\tfind %s -name "*.cmx" -exec rm {} \;\n\n' % args['dir'])
     print('[ocamlconf] Done!')
 
 def check_args(args):
