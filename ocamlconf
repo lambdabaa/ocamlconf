@@ -73,6 +73,7 @@ def ocamlconf(args):
     writer.write('.PHONY: clean\n')
     writer.write('clean:\n')
     writer.write('\trm -f %s\n' % args['binary'])
+    writer.write('\tfind %s -name "*.cmi" -exec rm {} \;\n\n' % args['dir'])
     writer.write('\tfind %s -name "*.cmx" -exec rm {} \;\n\n' % args['dir'])
     print('[ocamlconf] Done!')
 
